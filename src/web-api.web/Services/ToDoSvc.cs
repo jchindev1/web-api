@@ -1,62 +1,71 @@
-﻿using web_api.web.Models;
+﻿using Microsoft.EntityFrameworkCore;
+using web_api.web.Data;
+using web_api.web.Models;
 
 namespace web_api.web.Services
 {
     public class ToDoSvc
     {
-        private readonly List<ToDo> _toDos = new();
+        private readonly ToDoContext _context;
         private readonly ILogger<ToDoSvc> _logger;
 
-        public ToDoSvc(ILogger<ToDoSvc> logger)
+        public ToDoSvc(ToDoContext context, ILogger<ToDoSvc> logger)
         {
+            _context = context;
             _logger = logger;
         }
-
-        public Task<IReadOnlyList<ToDo>> GetAllAsync()
+        public async Task<IReadOnlyList<ToDo>> GetAllAsync()
         {
             _logger.LogInformation("Retrieving all ToDo items.");
-            return Task.FromResult((IReadOnlyList<ToDo>)_toDos.AsReadOnly());
+            var toDos = await _context.ToDos.ToListAsync();
+            return toDos.AsReadOnly();
         }
 
-        public Task<ToDo?> GetByIdAsync(int id)
+        public async Task<ToDo?> GetByIdAsync(int id)
         {
             _logger.LogInformation("Retrieving ToDo item with Id {Id}.", id);
-            var todo = _toDos.Find(t => t.Id == id);
-            return Task.FromResult(todo);
+            return await _context.ToDos.FirstOrDefaultAsync(t => t.Id == id);
         }
 
-        public Task<ToDo> CreateAsync(ToDo toDo)
+        public async Task<ToDo> CreateAsync(ToDo toDo)
         {
-            toDo.Id = _toDos.Count > 0 ? _toDos[^1].Id + 1 : 1;
-            _toDos.Add(toDo);
+            _context.ToDos.Add(toDo);
+            await _context.SaveChangesAsync();
             _logger.LogInformation("Created new ToDo item with Id {Id}.", toDo.Id);
-            return Task.FromResult(toDo);
+            return toDo;
         }
 
-        public Task<bool> UpdateAsync(ToDo toDo)
+        public async Task<bool> UpdateAsync(ToDo toDo)
         {
-            var index = _toDos.FindIndex(t => t.Id == toDo.Id);
-            if (index == -1)
+            var existingToDo = await _context.ToDos.FirstOrDefaultAsync(t => t.Id == toDo.Id);
+            if (existingToDo == null)
             {
                 _logger.LogWarning("ToDo item with Id {Id} not found for update.", toDo.Id);
-                return Task.FromResult(false);
+                return false;
             }
-            _toDos[index] = toDo;
+
+            existingToDo.Title = toDo.Title;
+            existingToDo.IsCompleted = toDo.IsCompleted;
+            existingToDo.Description = toDo.Description;
+
+            await _context.SaveChangesAsync();
             _logger.LogInformation("Updated ToDo item with Id {Id}.", toDo.Id);
-            return Task.FromResult(true);
+            return true;
         }
 
-        public Task<bool> DeleteAsync(int id)
+        public async Task<bool> DeleteAsync(int id)
         {
-            var toDo = _toDos.Find(t => t.Id == id);
+            var toDo = await _context.ToDos.FirstOrDefaultAsync(t => t.Id == id);
             if (toDo == null)
             {
                 _logger.LogWarning("ToDo item with Id {Id} not found for deletion.", id);
-                return Task.FromResult(false);
+                return false;
             }
-            _toDos.Remove(toDo);
+
+            _context.ToDos.Remove(toDo);
+            await _context.SaveChangesAsync();
             _logger.LogInformation("Deleted ToDo item with Id {Id}.", id);
-            return Task.FromResult(true);
+            return true;
         }
     }
 }

@@ -19,6 +19,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddScoped<WeatherForecastSvc>();
+builder.Services.AddScoped<ToDoSvc>();
 
 var app = builder.Build();
 
@@ -43,53 +44,42 @@ app.MapGet("/weatherforecast", (WeatherForecastSvc weatherSvc) => weatherSvc.Get
 .WithOpenApi();
 
 // ToDo API endpoints
-app.MapGet("/todos", async (ToDoContext context) =>
+app.MapGet("/todos", async (ToDoSvc toDoSvc) =>
 {
-    return await context.ToDos.ToListAsync();
+    return await toDoSvc.GetAllAsync();
 })
 .WithName("GetToDos")
 .WithOpenApi();
 
-app.MapGet("/todos/{id}", async (int id, ToDoContext context) =>
+app.MapGet("/todos/{id}", async (int id, ToDoSvc toDoSvc) =>
 {
-    var todo = await context.ToDos.FindAsync(id);
+    var todo = await toDoSvc.GetByIdAsync(id);
     return todo is not null ? Results.Ok(todo) : Results.NotFound();
 })
 .WithName("GetToDo")
 .WithOpenApi();
 
-app.MapPost("/todos", async (ToDo todo, ToDoContext context) =>
+app.MapPost("/todos", async (ToDo todo, ToDoSvc toDoSvc) =>
 {
-    context.ToDos.Add(todo);
-    await context.SaveChangesAsync();
-    return Results.Created($"/todos/{todo.Id}", todo);
+    var createdTodo = await toDoSvc.CreateAsync(todo);
+    return Results.Created($"/todos/{createdTodo.Id}", createdTodo);
 })
 .WithName("CreateToDo")
 .WithOpenApi();
 
-app.MapPut("/todos/{id}", async (int id, ToDo inputTodo, ToDoContext context) =>
+app.MapPut("/todos/{id}", async (int id, ToDo inputTodo, ToDoSvc toDoSvc) =>
 {
-    var todo = await context.ToDos.FindAsync(id);
-    if (todo is null) return Results.NotFound();
-
-    todo.Title = inputTodo.Title;
-    todo.Description = inputTodo.Description;
-    todo.IsCompleted = inputTodo.IsCompleted;
-
-    await context.SaveChangesAsync();
-    return Results.Ok(todo);
+    inputTodo.Id = id; // Ensure the ID matches the route parameter
+    var success = await toDoSvc.UpdateAsync(inputTodo);
+    return success ? Results.Ok(await toDoSvc.GetByIdAsync(id)) : Results.NotFound();
 })
 .WithName("UpdateToDo")
 .WithOpenApi();
 
-app.MapDelete("/todos/{id}", async (int id, ToDoContext context) =>
+app.MapDelete("/todos/{id}", async (int id, ToDoSvc toDoSvc) =>
 {
-    var todo = await context.ToDos.FindAsync(id);
-    if (todo is null) return Results.NotFound();
-
-    context.ToDos.Remove(todo);
-    await context.SaveChangesAsync();
-    return Results.NoContent();
+    var success = await toDoSvc.DeleteAsync(id);
+    return success ? Results.NoContent() : Results.NotFound();
 })
 .WithName("DeleteToDo")
 .WithOpenApi();
