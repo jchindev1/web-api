@@ -1,0 +1,56 @@
+{
+    "dotnet.defaultSolution": "src/web-api.sln",
+    "dotnet.preferCSharpExtension": true,
+    "files.exclude": {
+        "**/bin": true,
+        "**/obj": true
+    },
+    // General Copilot settings
+    "github.copilot.enable": {
+        "*": true, // Enable Copilot for all languages by default
+        "plaintext": false // Disable for plain text files
+    },
+    "github.copilot.editor.enableCodeActions": true, // Show Copilot commands as Code Actions
+    "github.copilot.renameSuggestions.triggerAutomatically": true, // Get rename suggestions automatically
+    // Copilot Chat specific settings
+    "github.copilot.chat.codeGeneration.useInstructionFiles": true, // IMPORTANT: Enable use of .github/copilot-instructions.md
+    "github.copilot.chat.codeGeneration.instructions": [
+        // You can add inline instructions here, but generally, use the .md file for larger sets of rules.
+        // Example: { "text": "Ensure all C# code uses async/await for I/O operations." }
+        {
+            "text": "For command-line interface (CLI) operations, always favor PowerShell commands over Bash or other shell commands."
+        }
+    ],
+    "github.copilot.chat.reviewSelection.enabled": true, // Enable code review for selected text
+    "github.copilot.chat.testGeneration.instructions": [
+        {
+            "text": "When generating tests for C# projects, use xUnit as the testing framework and Moq for mocking dependencies. Follow the Arrange-Act-Assert pattern. Ensure test methods are descriptive."
+        }
+    ],
+    "github.copilot.chat.commitMessageGeneration.instructions": [
+        {
+            "text": "Generate commit messages following Conventional Commits specification (e.g., feat(scope): description). Use imperative mood for the description."
+        }
+    ],
+    "github.copilot.chat.pullRequestDescriptionGeneration.instructions": [
+        {
+            "text": "Generate comprehensive pull request descriptions that summarize changes, list affected components, and highlight any breaking changes or migration steps. Follow the project's PR template if available."
+        }
+    ],
+    "github.copilot.nextEditSuggestions.enabled": true, // Enables Copilot's next edit suggestions
+    "editor.inlineSuggest.enabled": true, // Ensure inline suggestions are enabled
+    "editor.inlineSuggest.suppressSuggestions": false,
+    "editor.suggest.snippetsPreventQuickSuggestions": false, // Allow quick suggestions even with snippets
+    "editor.formatOnSave": true, // Auto-format code on save (ensure consistent formatting)
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit", // Organize using directives on save
+        "source.fixAll.dotnet": "explicit" // Apply .NET code fixes on save
+    },
+    // C# specific settings (often managed by C# Dev Kit or OmniSharp)
+    "omnisharp.enableDecompilationSupport": true, // Helpful for understanding library code
+    "omnisharp.enableEditorConfigSupport": true, // Ensures EditorConfig settings are respected for .NET projects
+    "dotnet.server.enableMsBuildDiagnosticOutput": false, // Reduce noise if not needed
+    // Telemetry settings (optional, adjust based on your privacy preferences)
+    "telemetry.telemetryLevel": "off", // Set to "all", "usage", "off"
+    "dotnet-test-explorer.testProjectPath": "src/web-api.tests/web-api.tests.csproj"
+}

@@ -1,0 +1,42 @@
+@web_api.web_HostAddress = http://localhost:5113
+
+### Get Weather Forecast
+GET {{web_api.web_HostAddress}}/weatherforecast/
+Accept: application/json
+
+### Get Weather Forecast (HTTPS)
+GET https://localhost:7259/weatherforecast/
+Accept: application/json
+
+### Health Check (Example endpoint)
+GET {{web_api.web_HostAddress}}/health
+Accept: application/json
+
+### Get All ToDos
+GET {{web_api.web_HostAddress}}/todo
+Accept: application/json
+
+### Get ToDo by ID
+GET {{web_api.web_HostAddress}}/todo/1
+Accept: application/json
+
+### Create ToDo
+POST {{web_api.web_HostAddress}}/todo
+Content-Type: application/json
+
+{
+  "title": "Sample ToDo",
+  "isComplete": false
+}
+
+### Update ToDo
+PUT {{web_api.web_HostAddress}}/todo/1
+Content-Type: application/json
+
+{
+  "title": "Updated ToDo",
+  "isComplete": true
+}
+
+### Delete ToDo
+DELETE {{web_api.web_HostAddress}}/todo/1
