@@ -1,8 +1,14 @@
 using System.Reflection.Metadata.Ecma335;
-using web_api.web.Services;
+using Microsoft.EntityFrameworkCore;
+using web_api.web.Data;
 using web_api.web.Models;
+using web_api.web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Add Entity Framework
+builder.Services.AddDbContext<ToDoContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -13,8 +19,6 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddScoped<WeatherForecastSvc>();
-builder.Services.AddScoped<ToDoSvc>();
-
 
 var app = builder.Build();
 
@@ -22,7 +26,7 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-    
+
     // Configure Swagger UI
     app.UseSwagger();
     app.UseSwaggerUI(c =>
@@ -33,44 +37,59 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-
+//Endpoints
 app.MapGet("/weatherforecast", (WeatherForecastSvc weatherSvc) => weatherSvc.GetWeatherForecast())
 .WithName("GetWeatherForecast")
 .WithOpenApi();
 
-app.MapGet("/todo", async (ToDoSvc svc) => await svc.GetAllAsync())
-    .WithName("GetAllToDos")
-    .WithOpenApi();
-
-app.MapGet("/todo/{id:int}", async (int id, ToDoSvc svc) =>
+// ToDo API endpoints
+app.MapGet("/todos", async (ToDoContext context) =>
 {
-    var todo = await svc.GetByIdAsync(id);
-    return todo is not null ? Results.Ok(todo) : Results.NotFound();
+    return await context.ToDos.ToListAsync();
 })
-.WithName("GetToDoById")
+.WithName("GetToDos")
 .WithOpenApi();
 
-app.MapPost("/todo", async (ToDo toDo, ToDoSvc svc) =>
+app.MapGet("/todos/{id}", async (int id, ToDoContext context) =>
 {
-    var created = await svc.CreateAsync(toDo);
-    return Results.Created($"/todo/{created.Id}", created);
+    var todo = await context.ToDos.FindAsync(id);
+    return todo is not null ? Results.Ok(todo) : Results.NotFound();
+})
+.WithName("GetToDo")
+.WithOpenApi();
+
+app.MapPost("/todos", async (ToDo todo, ToDoContext context) =>
+{
+    context.ToDos.Add(todo);
+    await context.SaveChangesAsync();
+    return Results.Created($"/todos/{todo.Id}", todo);
 })
 .WithName("CreateToDo")
 .WithOpenApi();
 
-app.MapPut("/todo/{id:int}", async (int id, ToDo toDo, ToDoSvc svc) =>
+app.MapPut("/todos/{id}", async (int id, ToDo inputTodo, ToDoContext context) =>
 {
-    toDo.Id = id;
-    var updated = await svc.UpdateAsync(toDo);
-    return updated ? Results.NoContent() : Results.NotFound();
+    var todo = await context.ToDos.FindAsync(id);
+    if (todo is null) return Results.NotFound();
+
+    todo.Title = inputTodo.Title;
+    todo.Description = inputTodo.Description;
+    todo.IsCompleted = inputTodo.IsCompleted;
+
+    await context.SaveChangesAsync();
+    return Results.Ok(todo);
 })
 .WithName("UpdateToDo")
 .WithOpenApi();
 
-app.MapDelete("/todo/{id:int}", async (int id, ToDoSvc svc) =>
+app.MapDelete("/todos/{id}", async (int id, ToDoContext context) =>
 {
-    var deleted = await svc.DeleteAsync(id);
-    return deleted ? Results.NoContent() : Results.NotFound();
+    var todo = await context.ToDos.FindAsync(id);
+    if (todo is null) return Results.NotFound();
+
+    context.ToDos.Remove(todo);
+    await context.SaveChangesAsync();
+    return Results.NoContent();
 })
 .WithName("DeleteToDo")
 .WithOpenApi();
