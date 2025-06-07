@@ -51,76 +51,111 @@ app.UseHttpsRedirection();
 
 app.MapGet("/rates", async ([FromQuery(Name = "base")] string baseValue) =>
 {
-    if (baseValue == "fiat")
+    try
     {
-        var fiatCurrencies = new[] { "USD", "SGD", "EUR" };
-        var httpClient = new HttpClient();
-        var results = new Dictionary<string, Dictionary<string, string>>();
-
-        foreach (var fiat in fiatCurrencies)
+        if (baseValue == "fiat")
         {
-            var fiatUrl = $"https://api.coinbase.com/v2/exchange-rates?currency={Uri.EscapeDataString(fiat)}";
-            var response = await httpClient.GetAsync(fiatUrl);
-            if (!response.IsSuccessStatusCode)
+            var fiatCurrencies = new[] { "USD", "SGD", "EUR" };
+            using var httpClient = new HttpClient();
+            var results = new Dictionary<string, Dictionary<string, string>>();
+
+            foreach (var fiat in fiatCurrencies)
             {
-                continue;
+                var fiatUrl = $"https://api.coinbase.com/v2/exchange-rates?currency={Uri.EscapeDataString(fiat)}";
+                var response = await httpClient.GetAsync(fiatUrl);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return Results.Problem(
+                        detail: $"Coinbase API returned status code {response.StatusCode} for currency {fiat}",
+                        statusCode: 500,
+                        title: "External API Error"
+                    );
+                }
+                var responseBody = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
+                var rates = doc.RootElement
+                    .GetProperty("data")
+                    .GetProperty("rates");
+
+                var selectedRates = new Dictionary<string, string>();
+                foreach (var symbol in new[] { "BTC", "DOGE", "ETH" })
+                {
+                    if (rates.TryGetProperty(symbol, out var rateProp))
+                    {
+                        selectedRates[symbol] = rateProp.GetString();
+                    }
+                }
+                results[fiat] = selectedRates;
             }
-            var responseBody = await response.Content.ReadAsStringAsync();
-            using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
-            var rates = doc.RootElement
+
+            return Results.Ok(results);
+        }
+
+        if (baseValue == "tokens")
+        {
+            var tokenSymbols = new[] { "BTC", "DOGE", "ETH" };
+            using var httpClient = new HttpClient();
+            var results = new Dictionary<string, Dictionary<string, string>>();
+
+            foreach (var token in tokenSymbols)
+            {
+                var tokenUrl = $"https://api.coinbase.com/v2/exchange-rates?currency={Uri.EscapeDataString(token)}";
+                var response = await httpClient.GetAsync(tokenUrl);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return Results.Problem(
+                        detail: $"Coinbase API returned status code {response.StatusCode} for currency {token}",
+                        statusCode: 500,
+                        title: "External API Error"
+                    );
+                }
+                var responseBody = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
+                var rates = doc.RootElement
                 .GetProperty("data")
                 .GetProperty("rates");
 
-            var selectedRates = new Dictionary<string, string>();
-            foreach (var symbol in new[] { "BTC", "DOGE", "ETH" })
-            {
-                if (rates.TryGetProperty(symbol, out var rateProp))
+                // Select only fiat currencies
+                var selectedRates = new Dictionary<string, string>();
+                foreach (var fiat in new[] { "USD", "SGD", "EUR" })
                 {
-                    selectedRates[symbol] = rateProp.GetString();
+                    if (rates.TryGetProperty(fiat, out var rateProp))
+                    {
+                        selectedRates[fiat] = rateProp.GetString();
+                    }
                 }
+                results[token] = selectedRates;
             }
-            results[fiat] = selectedRates;
+
+            return Results.Ok(results);
         }
 
-        return Results.Ok(results);
+        return Results.NotFound();
     }
-
-    if (baseValue == "tokens")
+    catch (HttpRequestException ex)
     {
-        var tokenSymbols = new[] { "BTC", "DOGE", "ETH" };
-        var httpClient = new HttpClient();
-        var results = new Dictionary<string, Dictionary<string, string>>();
-
-        foreach (var token in tokenSymbols)
-        {
-            var tokenUrl = $"https://api.coinbase.com/v2/exchange-rates?currency={Uri.EscapeDataString(token)}";
-            var response = await httpClient.GetAsync(tokenUrl);
-            if (!response.IsSuccessStatusCode)
-            {
-                continue;
-            }
-            var responseBody = await response.Content.ReadAsStringAsync();
-            using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
-            var rates = doc.RootElement
-            .GetProperty("data")
-            .GetProperty("rates");
-
-            // Select only fiat currencies
-            var selectedRates = new Dictionary<string, string>();
-            foreach (var fiat in new[] { "USD", "SGD", "EUR" })
-            {
-                if (rates.TryGetProperty(fiat, out var rateProp))
-                {
-                    selectedRates[fiat] = rateProp.GetString();
-                }
-            }
-            results[token] = selectedRates;
-        }
-
-        return Results.Ok(results);
+        return Results.Problem(
+            detail: $"Network error while calling Coinbase API: {ex.Message}",
+            statusCode: 500,
+            title: "Network Error"
+        );
     }
-
-    return Results.NotFound();
+    catch (System.Text.Json.JsonException ex)
+    {
+        return Results.Problem(
+            detail: $"Failed to parse Coinbase API response: {ex.Message}",
+            statusCode: 500,
+            title: "JSON Parse Error"
+        );
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            detail: $"Unexpected error: {ex.Message}",
+            statusCode: 500,
+            title: "Internal Server Error"
+        );
+    }
 }).WithName("GetRates")
 .WithOpenApi();
 
