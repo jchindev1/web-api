@@ -59,17 +59,14 @@ app.MapGet("/rates", async ([FromQuery(Name = "base")] string baseValue) =>
             using var httpClient = new HttpClient();
             var results = new Dictionary<string, Dictionary<string, string>>();
 
-            foreach (var fiat in fiatCurrencies)
+            // Create tasks for parallel execution
+            var tasks = fiatCurrencies.Select(async fiat =>
             {
                 var fiatUrl = $"https://api.coinbase.com/v2/exchange-rates?currency={Uri.EscapeDataString(fiat)}";
                 var response = await httpClient.GetAsync(fiatUrl);
                 if (!response.IsSuccessStatusCode)
                 {
-                    return Results.Problem(
-                        detail: $"Coinbase API returned status code {response.StatusCode} for currency {fiat}",
-                        statusCode: 500,
-                        title: "External API Error"
-                    );
+                    throw new HttpRequestException($"Coinbase API returned status code {response.StatusCode} for currency {fiat}");
                 }
                 var responseBody = await response.Content.ReadAsStringAsync();
                 using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
@@ -85,29 +82,34 @@ app.MapGet("/rates", async ([FromQuery(Name = "base")] string baseValue) =>
                         selectedRates[symbol] = rateProp.GetString();
                     }
                 }
-                results[fiat] = selectedRates;
+                return new { Currency = fiat, Rates = selectedRates };
+            }).ToArray();
+
+            // Wait for all tasks to complete
+            var taskResults = await Task.WhenAll(tasks);
+
+            // Build the results dictionary
+            foreach (var result in taskResults)
+            {
+                results[result.Currency] = result.Rates;
             }
 
             return Results.Ok(results);
         }
-
         if (baseValue == "tokens")
         {
             var tokenSymbols = new[] { "BTC", "DOGE", "ETH" };
             using var httpClient = new HttpClient();
             var results = new Dictionary<string, Dictionary<string, string>>();
 
-            foreach (var token in tokenSymbols)
+            // Create tasks for parallel execution
+            var tasks = tokenSymbols.Select(async token =>
             {
                 var tokenUrl = $"https://api.coinbase.com/v2/exchange-rates?currency={Uri.EscapeDataString(token)}";
                 var response = await httpClient.GetAsync(tokenUrl);
                 if (!response.IsSuccessStatusCode)
                 {
-                    return Results.Problem(
-                        detail: $"Coinbase API returned status code {response.StatusCode} for currency {token}",
-                        statusCode: 500,
-                        title: "External API Error"
-                    );
+                    throw new HttpRequestException($"Coinbase API returned status code {response.StatusCode} for currency {token}");
                 }
                 var responseBody = await response.Content.ReadAsStringAsync();
                 using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
@@ -124,7 +126,16 @@ app.MapGet("/rates", async ([FromQuery(Name = "base")] string baseValue) =>
                         selectedRates[fiat] = rateProp.GetString();
                     }
                 }
-                results[token] = selectedRates;
+                return new { Currency = token, Rates = selectedRates };
+            }).ToArray();
+
+            // Wait for all tasks to complete
+            var taskResults = await Task.WhenAll(tasks);
+
+            // Build the results dictionary
+            foreach (var result in taskResults)
+            {
+                results[result.Currency] = result.Rates;
             }
 
             return Results.Ok(results);
