@@ -1,62 +1,63 @@
 ﻿using web_api.web.Models;
+using web_api.web.Repositories;
 
 namespace web_api.web.Services
 {
     public class ToDoSvc
     {
-        private readonly List<ToDo> _toDos = new();
+        private readonly IToDoRepository _repository;
         private readonly ILogger<ToDoSvc> _logger;
 
-        public ToDoSvc(ILogger<ToDoSvc> logger)
+        public ToDoSvc(IToDoRepository repository, ILogger<ToDoSvc> logger)
         {
+            _repository = repository;
             _logger = logger;
         }
-
-        public Task<IReadOnlyList<ToDo>> GetAllAsync()
+        public async Task<IReadOnlyList<ToDo>> GetAllAsync()
         {
             _logger.LogInformation("Retrieving all ToDo items.");
-            return Task.FromResult((IReadOnlyList<ToDo>)_toDos.AsReadOnly());
+            return await _repository.GetAllAsync();
         }
 
-        public Task<ToDo?> GetByIdAsync(int id)
+        public async Task<ToDo?> GetByIdAsync(int id)
         {
             _logger.LogInformation("Retrieving ToDo item with Id {Id}.", id);
-            var todo = _toDos.Find(t => t.Id == id);
-            return Task.FromResult(todo);
+            return await _repository.GetByIdAsync(id);
         }
 
-        public Task<ToDo> CreateAsync(ToDo toDo)
+        public async Task<ToDo> CreateAsync(ToDo toDo)
         {
-            toDo.Id = _toDos.Count > 0 ? _toDos[^1].Id + 1 : 1;
-            _toDos.Add(toDo);
-            _logger.LogInformation("Created new ToDo item with Id {Id}.", toDo.Id);
-            return Task.FromResult(toDo);
+            var createdToDo = await _repository.CreateAsync(toDo);
+            _logger.LogInformation("Created new ToDo item with Id {Id}.", createdToDo.Id);
+            return createdToDo;
         }
 
-        public Task<bool> UpdateAsync(ToDo toDo)
+        public async Task<bool> UpdateAsync(ToDo toDo)
         {
-            var index = _toDos.FindIndex(t => t.Id == toDo.Id);
-            if (index == -1)
+            var success = await _repository.UpdateAsync(toDo);
+            if (success)
+            {
+                _logger.LogInformation("Updated ToDo item with Id {Id}.", toDo.Id);
+            }
+            else
             {
                 _logger.LogWarning("ToDo item with Id {Id} not found for update.", toDo.Id);
-                return Task.FromResult(false);
             }
-            _toDos[index] = toDo;
-            _logger.LogInformation("Updated ToDo item with Id {Id}.", toDo.Id);
-            return Task.FromResult(true);
+            return success;
         }
 
-        public Task<bool> DeleteAsync(int id)
+        public async Task<bool> DeleteAsync(int id)
         {
-            var toDo = _toDos.Find(t => t.Id == id);
-            if (toDo == null)
+            var success = await _repository.DeleteAsync(id);
+            if (success)
+            {
+                _logger.LogInformation("Deleted ToDo item with Id {Id}.", id);
+            }
+            else
             {
                 _logger.LogWarning("ToDo item with Id {Id} not found for deletion.", id);
-                return Task.FromResult(false);
             }
-            _toDos.Remove(toDo);
-            _logger.LogInformation("Deleted ToDo item with Id {Id}.", id);
-            return Task.FromResult(true);
+            return success;
         }
     }
 }

@@ -1,8 +1,22 @@
-using System.Reflection.Metadata.Ecma335;
-using web_api.web.Services;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using web_api.web.Data;
 using web_api.web.Models;
+using web_api.web.Repositories;
+using web_api.web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Add Entity Framework
+builder.Services.AddDbContext<ToDoContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Add repositories
+builder.Services.AddScoped<IToDoRepository, ToDoRepository>();
+
+// Add CacheService and IMemoryCache to DI
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<CacheService>();
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -15,14 +29,13 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WeatherForecastSvc>();
 builder.Services.AddScoped<ToDoSvc>();
 
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-    
+
     // Configure Swagger UI
     app.UseSwagger();
     app.UseSwaggerUI(c =>
@@ -34,45 +47,239 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 
-app.MapGet("/weatherforecast", (WeatherForecastSvc weatherSvc) => weatherSvc.GetWeatherForecast())
-.WithName("GetWeatherForecast")
+//Padlet endpoints
+
+app.MapGet("/rates", async ([FromQuery(Name = "base")] string baseValue) =>
+{
+    try
+    {
+        if (baseValue == "fiat")
+        {
+            var fiatCurrencies = new[] { "USD", "SGD", "EUR" };
+            using var httpClient = new HttpClient();
+            var results = new Dictionary<string, Dictionary<string, string>>();
+
+            // Create tasks for parallel execution
+            var tasks = fiatCurrencies.Select(async fiat =>
+            {
+                var fiatUrl = $"https://api.coinbase.com/v2/exchange-rates?currency={Uri.EscapeDataString(fiat)}";
+                var response = await httpClient.GetAsync(fiatUrl);
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new HttpRequestException($"Coinbase API returned status code {response.StatusCode} for currency {fiat}");
+                }
+                var responseBody = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
+                var rates = doc.RootElement
+                    .GetProperty("data")
+                    .GetProperty("rates");
+
+                var selectedRates = new Dictionary<string, string>();
+                foreach (var symbol in new[] { "BTC", "DOGE", "ETH" })
+                {
+                    if (rates.TryGetProperty(symbol, out var rateProp))
+                    {
+                        selectedRates[symbol] = rateProp.GetString();
+                    }
+                }
+                return new { Currency = fiat, Rates = selectedRates };
+            }).ToArray();
+
+            // Wait for all tasks to complete
+            var taskResults = await Task.WhenAll(tasks);
+
+            // Build the results dictionary
+            foreach (var result in taskResults)
+            {
+                results[result.Currency] = result.Rates;
+            }
+
+            return Results.Ok(results);
+        }
+        if (baseValue == "tokens")
+        {
+            var tokenSymbols = new[] { "BTC", "DOGE", "ETH" };
+            using var httpClient = new HttpClient();
+            var results = new Dictionary<string, Dictionary<string, string>>();
+
+            // Create tasks for parallel execution
+            var tasks = tokenSymbols.Select(async token =>
+            {
+                var tokenUrl = $"https://api.coinbase.com/v2/exchange-rates?currency={Uri.EscapeDataString(token)}";
+                var response = await httpClient.GetAsync(tokenUrl);
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new HttpRequestException($"Coinbase API returned status code {response.StatusCode} for currency {token}");
+                }
+                var responseBody = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
+                var rates = doc.RootElement
+                .GetProperty("data")
+                .GetProperty("rates");
+
+                // Select only fiat currencies
+                var selectedRates = new Dictionary<string, string>();
+                foreach (var fiat in new[] { "USD", "SGD", "EUR" })
+                {
+                    if (rates.TryGetProperty(fiat, out var rateProp))
+                    {
+                        selectedRates[fiat] = rateProp.GetString();
+                    }
+                }
+                return new { Currency = token, Rates = selectedRates };
+            }).ToArray();
+
+            // Wait for all tasks to complete
+            var taskResults = await Task.WhenAll(tasks);
+
+            // Build the results dictionary
+            foreach (var result in taskResults)
+            {
+                results[result.Currency] = result.Rates;
+            }
+
+            return Results.Ok(results);
+        }
+
+        return Results.NotFound();
+    }
+    catch (HttpRequestException ex)
+    {
+        return Results.Problem(
+            detail: $"Network error while calling Coinbase API: {ex.Message}",
+            statusCode: 500,
+            title: "Network Error"
+        );
+    }
+    catch (System.Text.Json.JsonException ex)
+    {
+        return Results.Problem(
+            detail: $"Failed to parse Coinbase API response: {ex.Message}",
+            statusCode: 500,
+            title: "JSON Parse Error"
+        );
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            detail: $"Unexpected error: {ex.Message}",
+            statusCode: 500,
+            title: "Internal Server Error"
+        );
+    }
+}).WithName("GetRates")
 .WithOpenApi();
 
-app.MapGet("/todo", async (ToDoSvc svc) => await svc.GetAllAsync())
-    .WithName("GetAllToDos")
-    .WithOpenApi();
 
-app.MapGet("/todo/{id:int}", async (int id, ToDoSvc svc) =>
+app.MapPost("/webhook", ([FromBody] WebhookPayload payload) =>
 {
-    var todo = await svc.GetByIdAsync(id);
-    return todo is not null ? Results.Ok(todo) : Results.NotFound();
+    // Example: log or process the payload as needed
+    // For now, just return the received payload for demonstration
+    return Results.Ok(payload);
 })
-.WithName("GetToDoById")
+.WithName("webhook")
 .WithOpenApi();
 
-app.MapPost("/todo", async (ToDo toDo, ToDoSvc svc) =>
+app.MapGet("/rates1", (
+    [FromQuery(Name = "base_currency")] string baseCurrency,
+    [FromQuery(Name = "target_currency")] string targetCurrency,
+    [FromQuery(Name = "start")] long? start,
+    [FromQuery(Name = "end")] long? end) =>
 {
-    var created = await svc.CreateAsync(toDo);
-    return Results.Created($"/todo/{created.Id}", created);
-})
-.WithName("CreateToDo")
-.WithOpenApi();
+    // Example: Validate input
+    if (string.IsNullOrWhiteSpace(baseCurrency) || string.IsNullOrWhiteSpace(targetCurrency) || start is null || end is null)
+    {
+        return Results.BadRequest("Missing required query parameters.");
+    }
 
-app.MapPut("/todo/{id:int}", async (int id, ToDo toDo, ToDoSvc svc) =>
-{
-    toDo.Id = id;
-    var updated = await svc.UpdateAsync(toDo);
-    return updated ? Results.NoContent() : Results.NotFound();
-})
-.WithName("UpdateToDo")
-.WithOpenApi();
+    // TODO: Replace with actual rate lookup logic
+    var result = new
+    {
+        BaseCurrency = baseCurrency,
+        TargetCurrency = targetCurrency,
+        Start = start,
+        End = end,
+        Rates = new[]
+        {
+            new { Timestamp = start, Rate = "12345.67" },
+            new { Timestamp = end, Rate = "12500.00" }
+        }
+    };
 
-app.MapDelete("/todo/{id:int}", async (int id, ToDoSvc svc) =>
-{
-    var deleted = await svc.DeleteAsync(id);
-    return deleted ? Results.NoContent() : Results.NotFound();
+    return Results.Ok(result);
 })
-.WithName("DeleteToDo")
+.WithName("GetRatesByCurrencyAndRange")
 .WithOpenApi();
 
 app.Run();
+
+public record WebhookPayload(
+    string Type,
+    WebhookData Data
+);
+
+public record WebhookData(
+    [property: System.Text.Json.Serialization.JsonPropertyName("base_currency")]
+    string BaseCurrency,
+    [property: System.Text.Json.Serialization.JsonPropertyName("published_at")]
+    long PublishedAt,
+    [property: System.Text.Json.Serialization.JsonPropertyName("rates")]
+    Dictionary<string, string> Rates
+);
+
+
+
+
+
+
+//app.MapGet("/weatherforecast", (WeatherForecastSvc weatherSvc) => weatherSvc.GetWeatherForecast())
+//.WithName("GetWeatherForecast")
+//.WithOpenApi();
+
+
+////Endpoints
+//app.MapGet("/weatherforecast", (WeatherForecastSvc weatherSvc) => weatherSvc.GetWeatherForecast())
+//.WithName("GetWeatherForecast")
+//.WithOpenApi();
+
+//// ToDo API endpoints
+//app.MapGet("/todos", async (ToDoSvc toDoSvc) =>
+//{
+//    return await toDoSvc.GetAllAsync();
+//})
+//.WithName("GetToDos")
+//.WithOpenApi();
+
+//app.MapGet("/todos/{id}", async (int id, ToDoSvc toDoSvc) =>
+//{
+//    var todo = await toDoSvc.GetByIdAsync(id);
+//    return todo is not null ? Results.Ok(todo) : Results.NotFound();
+//})
+//.WithName("GetToDo")
+//.WithOpenApi();
+
+//app.MapPost("/todos", async (ToDo todo, ToDoSvc toDoSvc) =>
+//{
+//    var createdTodo = await toDoSvc.CreateAsync(todo);
+//    return Results.Created($"/todos/{createdTodo.Id}", createdTodo);
+//})
+//.WithName("CreateToDo")
+//.WithOpenApi();
+
+//app.MapPut("/todos/{id}", async (int id, ToDo inputTodo, ToDoSvc toDoSvc) =>
+//{
+//    inputTodo.Id = id; // Ensure the ID matches the route parameter
+//    var success = await toDoSvc.UpdateAsync(inputTodo);
+//    return success ? Results.Ok(await toDoSvc.GetByIdAsync(id)) : Results.NotFound();
+//})
+//.WithName("UpdateToDo")
+//.WithOpenApi();
+
+//app.MapDelete("/todos/{id}", async (int id, ToDoSvc toDoSvc) =>
+//{
+//    var success = await toDoSvc.DeleteAsync(id);
+//    return success ? Results.NoContent() : Results.NotFound();
+//})
+//.WithName("DeleteToDo")
+//.WithOpenApi();
+
